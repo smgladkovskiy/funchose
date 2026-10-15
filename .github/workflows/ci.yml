@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      # make lint installs golangci-lint into bin/ when it is not on PATH.
+      - uses: actions/cache@v6
+        with:
+          path: bin
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('Makefile') }}
+      - run: make lint
+      - name: go.mod and go.sum are tidy
+        run: make tidy && git diff --exit-code
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      - run: make test
+
+  functional:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: [14, 15, 16, 17, 18]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      # testcontainers starts the server in the Docker of the runner.
+      - run: make test-functional PG_IMAGE=postgres:${{ matrix.postgres }}-alpine
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the badge to the badges branch
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      - run: make cover
+      - name: Summary
+        run: go tool cover -func=cover.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+      # The badge in the README reads coverage.json from the badges branch
+      # through shields.io. The branch holds one commit with that one file.
+      - name: Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pct=$(go tool cover -func=cover.out | awk '/^total:/ { sub(/%/, "", $3); print $3 }')
+          color=$(awk -v p="$pct" 'BEGIN { print (p >= 85 ? "brightgreen" : p >= 70 ? "yellow" : "red") }')
+          dir=$(mktemp -d)
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > "$dir/coverage.json"
+          cd "$dir"
+          git init -q -b badges
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add coverage.json
+          git commit -q -m "coverage $pct%"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges

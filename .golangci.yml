@@ -1,0 +1,190 @@
+version: "2"
+run:
+  go: "1.26.1"
+  modules-download-mode: mod
+  tests: true
+  allow-parallel-runners: true
+  allow-serial-runners: true
+  timeout: 4m
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - cyclop
+    - decorder
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - err113
+    - errcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - funcorder
+    - funlen
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - govet
+    - grouper
+    - iface
+    - importas
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - ireturn
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - mnd
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - nlreturn
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - varnamelen
+    - wastedassign
+    - whitespace
+    - wrapcheck
+    - wsl_v5
+    - zerologlint
+  settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 0
+    gomoddirectives:
+      # The functional tests are a module of their own that runs against the
+      # library next to it.
+      replace-local: true
+    exhaustive:
+      check:
+        - switch
+      default-signifies-exhaustive: true
+      default-case-required: true
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    varnamelen:
+      max-distance: 5
+      min-name-length: 2
+      check-receiver: false
+      check-return: false
+      check-type-param: true
+      ignore-names:
+        - err
+        - db
+        - q
+      ignore-type-assert-ok: true
+      ignore-map-index-ok: true
+      ignore-chan-recv-ok: true
+      ignore-decls:
+        - t testing.T
+        - i int
+        - T any
+        - m map[string]int
+        - w http.ResponseWriter
+        - r *http.Request
+    wrapcheck:
+      extra-ignore-sigs:
+        - .Err()
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - contextcheck
+          - errcheck
+          - errchkjson
+          - funlen
+          - gocyclo
+          - cyclop
+          - gosec
+          - lll
+          - varnamelen
+        path: (.+)_test\.go
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+      custom-order: true
+      no-lex-order: false
