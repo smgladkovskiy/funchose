@@ -97,3 +97,7 @@ GitLab merged results pipelines it takes the branch from
 `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` on its own; on GitHub check out the head of
 the pull request (see [CI](ci.md)); elsewhere pass `-head <commit>`. Problems are
 printed as `::error file=...` annotations on GitHub Actions.
+
+---
+
+[← Go library](go-library.md) · [Contents](../README.md#documentation) · [CI →](ci.md)

@@ -137,3 +137,7 @@ p, err := funchose.NewProvider(db, routines, funchose.WithBuild(build))
 See [Go library](go-library.md) for the full example, and
 [Operations](operations.md#schema-changes-next-to-goose) for changes that remove a
 column a routine reads.
+
+---
+
+[← How it works](how-it-works.md) · [Contents](../README.md#documentation) · [Routine files →](routine-files.md)

@@ -110,3 +110,7 @@ routine files that still mention them.
 - Check that a body works: PostgreSQL only checks PL/pgSQL syntax when a function
   is created. Run [plpgsql_check](https://github.com/okbob/plpgsql_check) and your
   tests against a database built from your migrations.
+
+---
+
+[← Getting started](getting-started.md) · [Contents](../README.md#documentation) · [Builds and rollbacks →](builds-and-rollbacks.md)

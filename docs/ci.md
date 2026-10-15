@@ -78,3 +78,7 @@ the merge commit GitHub checks out for a pull request by default: hence `ref`.
 | go back with an older image                                                  | rerun the deploy job of the older pipeline with `FUNCHOSE_ALLOW_DOWNGRADE=true`       |
 | the older release did not have a routine a newer one created                 | add `FUNCHOSE_ALLOW_DROP=true`, once you know nothing calls it                        |
 | a newer pipeline is stale because a branch was deployed to the same database | run the newest pipeline again, or deploy it once with `FUNCHOSE_ALLOW_DOWNGRADE=true` |
+
+---
+
+[← Command line](cli.md) · [Contents](../README.md#documentation) · [Operations →](operations.md)

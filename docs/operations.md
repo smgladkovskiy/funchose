@@ -112,3 +112,7 @@ WHERE schema_name = 'billing'
   AND routine_name = 'invoice_total'
 ORDER BY id;
 ```
+
+---
+
+[← CI](ci.md) · [Contents](../README.md#documentation) · [Alternatives →](alternatives.md)

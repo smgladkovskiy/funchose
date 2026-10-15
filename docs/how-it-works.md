@@ -83,3 +83,7 @@ listed as `untracked` and never touched.
 
 The command line fails a run that ends in `stale` (`-fail-on`); the library
 fails on what `WithFailOn` names.
+
+---
+
+[Contents](../README.md#documentation) · [Getting started →](getting-started.md)

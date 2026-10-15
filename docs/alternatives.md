@@ -17,3 +17,7 @@
 - **Atlas** supports functions in its Pro edition, **pgschema** and
   **pgCodeKeeper** diff the whole schema declaratively. They want to own the
   tables too, which conflicts with an existing migration tool.
+
+---
+
+[← Operations](operations.md) · [Contents](../README.md#documentation)
