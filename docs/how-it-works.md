@@ -60,14 +60,14 @@ For a routine with a file:
 
 For a routine the history tracks but no file describes:
 
-| Situation                                                  | funchose does                                              | Action    |
-|------------------------------------------------------------|------------------------------------------------------------|-----------|
-| the first deploy without the file                          | records the retirement and the call counter, drops nothing | `retire`  |
-| the same build again, a pod restart                        | nothing                                                    | `retired` |
-| a newer build, the counter did not grow                    | drops every overload                                       | `drop`    |
-| a newer build, the counter grew                            | keeps it, checks again on the next deploy                  | `kept`    |
-| the calls cannot be counted, or other objects depend on it | keeps it                                                   | `blocked` |
-| a newer build put it under funchose, this one is older     | nothing, unless rolling back is allowed                    | `stale`   |
+| Situation                                                                          | funchose does                                              | Action    |
+|------------------------------------------------------------------------------------|------------------------------------------------------------|-----------|
+| the first deploy without the file                                                  | records the retirement and the call counter, drops nothing | `retire`  |
+| the same build again, a pod restart                                                | nothing                                                    | `retired` |
+| a newer build, the counter did not grow                                            | drops every overload                                       | `drop`    |
+| a newer build, the counter grew                                                    | keeps it, checks again on the next deploy                  | `kept`    |
+| the calls cannot be counted, other objects depend on it, or other routines call it | keeps it                                                   | `blocked` |
+| a newer build put it under funchose, this one is older                             | nothing, unless rolling back is allowed                    | `stale`   |
 
 Routines in the managed schemas that have neither a file nor a history are
 listed as `untracked` and never touched.

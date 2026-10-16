@@ -30,7 +30,8 @@ const (
 	ActionStale Action = "stale"
 	// ActionBlocked: the routine should be dropped, but dropping it is not safe
 	// or not allowed: a rollback would drop a routine a newer build created, its
-	// calls are not counted, or other objects depend on it. The routine stays.
+	// calls are not counted, other objects depend on it, or the bodies of other
+	// routines call it. The routine stays.
 	ActionBlocked Action = "blocked"
 	// ActionRetire: the file is gone. The routine stays for now; funchose
 	// remembers its definition and call counter and drops it on a later deploy.

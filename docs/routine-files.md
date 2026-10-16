@@ -85,9 +85,20 @@ schema migration, when:
 - the routine is `LANGUAGE sql`: such routines can be inlined into the calling
   query and are then not counted. A counter that grew still keeps them;
 - the routine is also called on read replicas, which the primary does not count.
-  Say so with `-replicas` (`WithReplicas`);
+  Say so with `-replicas` (`WithReplicas`).
+
+A routine the database still uses is not dropped, `-allow-drop` or not, and the
+report names the users:
+
 - another object depends on it: a trigger, a view, a column default, a routine
-  with a SQL-standard body. The report names them.
+  with a SQL-standard body. Change or drop those in a schema migration first;
+- the body of another routine calls it. PostgreSQL records no dependency for such
+  a call, and a caller that did not run between two deploys leaves the counter as
+  it was. Remove the calls: the deploy that applies the change reads the new
+  bodies and drops the routine. Routines dropped in the same run do not count,
+  so a routine goes together with its only callers. funchose looks for the name
+  followed by `(` in the bodies of every routine in the database: a call built at
+  run time for `EXECUTE` is not found, a call in a comment counts.
 
 Two guards against losing routines by mistake:
 
@@ -97,9 +108,6 @@ Two guards against losing routines by mistake:
 - **Schemas without a directory.** If the history tracks routines of a schema the
   files no longer cover, the run fails. When you removed the directory on
   purpose, name the schema in `-removed-schemas` until its routines are dropped.
-
-`funchose lint` lists the routine files a merge request deletes, and the other
-routine files that still mention them.
 
 ## What funchose does not do
 
