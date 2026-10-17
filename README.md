@@ -9,22 +9,74 @@
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/smgladkovskiy/funchose/badges/coverage.json)](https://github.com/smgladkovskiy/funchose/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/smgladkovskiy/funchose.svg)](https://pkg.go.dev/github.com/smgladkovskiy/funchose)
 
-Keep PostgreSQL functions and procedures in git as plain files, one file per
-routine, and apply the ones that changed. A Go library and a CLI. It sits next
-to goose, golang-migrate or any other migration tool and takes over the part of
-the schema they handle worst: stored routines.
+Migrations for PostgreSQL functions and stored procedures, where a one-line
+change is a one-line diff. A Go library and a CLI that work next to goose,
+golang-migrate or any other migration tool: the tables stay with it, the
+routines move to funchose.
 
-## Why
+## The problem
 
-Versioned migrations are a good fit for tables. A column is added once, and the
-migration file says exactly that. Functions are different. To change one line
-of a 1,500-line PL/pgSQL function, a migration has to carry the whole new body
-in `up` and the whole old body in `down`. The reviewer gets 3,000 new lines and
-has to find the three that changed. Two branches that touch the same function
-each carry a full copy, and whichever is deployed last quietly wins.
+A migration tool can change a function only one way: with a new migration that
+carries the whole new body in `up` and the whole old body in `down`. This is
+the merge request for one changed line in a 1,500-line PL/pgSQL function:
 
-funchose puts the function back where code lives: in one file that you edit in
-place.
+```diff
+ migrations/20261014120000_invoice_total_discount.sql                      +3,061 −0
+@@ -0,0 +1,3061 @@
++-- +goose Up
++-- +goose StatementBegin
++CREATE OR REPLACE FUNCTION billing.invoice_total(invoice_id bigint)
++ RETURNS numeric
++ LANGUAGE plpgsql
++AS $function$
++BEGIN
++    … 805 lines of the function, all green, all as they were
++    RETURN (SELECT coalesce(sum(amount - discount), 0) FROM billing.invoice_line WHERE invoice = invoice_id);
++    … 692 more lines, all green, all as they were
++END
++$function$;
++-- +goose StatementEnd
++
++-- +goose Down
++-- +goose StatementBegin
++CREATE OR REPLACE FUNCTION billing.invoice_total(invoice_id bigint)
++ RETURNS numeric
++ LANGUAGE plpgsql
++AS $function$
++BEGIN
++    … the same 1,500 lines once more, copied from the previous migration
++END
++$function$;
++-- +goose StatementEnd
+```
+
+The change is in there, one green line among 3,061, with nothing to mark it:
+the old body lives in another migration, so the diff has nothing to compare
+with. The reviewer either diffs two migrations by hand or approves on trust.
+And when two branches change the same function, each carries a full copy, and
+whichever is deployed last silently undoes the other.
+
+## With funchose
+
+The function lives in one file, `routines/billing/invoice_total.sql`, that you
+edit in place. The same change in the merge request:
+
+```diff
+ routines/billing/invoice_total.sql                                              +1 −1
+@@ -809,7 +809,7 @@ BEGIN
+       WHERE i.id = invoice_id;
+
+     -- an empty invoice totals to zero
+-    RETURN (SELECT coalesce(sum(amount), 0) FROM billing.invoice_line WHERE invoice = invoice_id);
++    RETURN (SELECT coalesce(sum(amount - discount), 0) FROM billing.invoice_line WHERE invoice = invoice_id);
+ END
+ $function$
+ ;
+```
+
+Two branches that change the same function now meet in git: different lines
+merge, the same lines conflict. On deploy funchose applies the files that
+changed, in one transaction, and keeps a history of every version.
 
 ```
 routines/
@@ -133,4 +185,4 @@ another PostgreSQL; CI runs them on 14 to 18. They live in a module of their own
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -76,6 +76,9 @@ type providerCase struct {
 // b is WithBuild, short for the tables below.
 func b(n int64) funchose.Option { return funchose.WithBuild(n) }
 
+// gCallsF is a routine g whose body calls f.
+const gCallsF = "CREATE OR REPLACE FUNCTION g() RETURNS text LANGUAGE plpgsql AS $$ BEGIN RETURN app.f(); END $$;"
+
 // keep is another routine of the schema, so that the schema has a directory.
 var keep = map[string]string{kFile: fn("k", "k")}
 
@@ -420,6 +423,37 @@ var removalCases = []providerCase{
 				want:    map[string]funchose.Action{trgKey: funchose.ActionBlocked, fKey: funchose.ActionUpdate},
 				notes:   map[string]string{trgKey: "trigger tr on table app.t"},
 				results: map[string]string{fKey: "v2"}, check: "SELECT to_regprocedure('app.trg()') IS NOT NULL"},
+		},
+	},
+	{
+		// PostgreSQL records no dependency on a routine that a body calls, and
+		// a caller that did not run between two deploys left the counter as it was.
+		name: "a routine another routine calls is not dropped until the call is gone",
+		steps: []step{
+			{files: map[string]string{kFile: fn("k", "k"), fFile: fn("f", "v1"), gFile: gCallsF}, opts: opts(b(1))},
+			{files: map[string]string{kFile: fn("k", "k"), gFile: gCallsF}, opts: opts(b(2)), want: map[string]funchose.Action{fKey: funchose.ActionRetire}},
+			// Another change makes the run apply files, not stop at the first pass.
+			{files: map[string]string{kFile: fn("k", "k2"), gFile: gCallsF}, opts: opts(b(3)),
+				want: map[string]funchose.Action{fKey: funchose.ActionBlocked}, notes: map[string]string{fKey: "called by app.g()"},
+				results: map[string]string{fKey: "v1", gKey: "v1"}},
+			{files: map[string]string{kFile: fn("k", "k2"), gFile: gCallsF}, opts: opts(b(4)),
+				want: map[string]funchose.Action{fKey: funchose.ActionBlocked}},
+			// The bodies are read after the files are applied: the run that
+			// removes the call drops the routine, even when blocked fails runs.
+			{files: map[string]string{kFile: fn("k", "k2"), gFile: strings.Replace(gCallsF, "app.f()", "'alone'", 1)},
+				opts: opts(b(5), funchose.WithFailOn(funchose.ActionBlocked)),
+				want: map[string]funchose.Action{fKey: funchose.ActionDrop, gKey: funchose.ActionUpdate}, absent: []string{fKey},
+				results: map[string]string{gKey: "alone"}},
+		},
+	},
+	{
+		name: "routines that call each other are dropped together",
+		steps: []step{
+			{files: map[string]string{kFile: fn("k", "k"), fFile: fn("f", "v1"), gFile: gCallsF}, opts: opts(b(1))},
+			{files: map[string]string{kFile: fn("k", "k")}, opts: opts(b(2)),
+				want: map[string]funchose.Action{fKey: funchose.ActionRetire, gKey: funchose.ActionRetire}},
+			{files: map[string]string{kFile: fn("k", "k")}, opts: opts(b(3), funchose.WithFailOn(funchose.ActionBlocked)),
+				want: map[string]funchose.Action{fKey: funchose.ActionDrop, gKey: funchose.ActionDrop}, absent: []string{fKey, gKey}},
 		},
 	},
 	{

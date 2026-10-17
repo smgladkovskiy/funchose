@@ -147,3 +147,7 @@ warnings.Set(float64(len(rep.Warnings())))
 ```
 
 Alert on `drift`, `stale`, `blocked` and `kept`: each one needs a person.
+
+---
+
+[← Builds and rollbacks](builds-and-rollbacks.md) · [Contents](../README.md#documentation) · [Command line →](cli.md)

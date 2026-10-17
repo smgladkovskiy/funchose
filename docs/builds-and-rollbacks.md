@@ -109,3 +109,7 @@ recorded:
 
 The same rule protects routines funchose has never seen: adopting a file that
 differs from the routine in the database needs `-overwrite-drift` too.
+
+---
+
+[← Routine files](routine-files.md) · [Contents](../README.md#documentation) · [Go library →](go-library.md)

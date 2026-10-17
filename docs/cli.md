@@ -17,7 +17,7 @@ go install github.com/smgladkovskiy/funchose/cmd/funchose@latest
 funchose up      [flags]   apply the routines that changed
 funchose plan    [flags]   the same, with diffs, rolled back at the end
 funchose status  [flags]   compare files, history and database; changes nothing, takes no lock
-funchose lint    [flags]   check routine files; in a merge request, check the branch against the target
+funchose lint    [flags]   check routine files; in a merge request, also the signatures the branch changed
 funchose export  [flags]   write the routines of a schema into files
 funchose version
 ```
@@ -58,42 +58,30 @@ instead of falling back to the default.
 
 ## lint
 
-`lint` checks the routine files. In a merge request pipeline it also compares the
-branch with the target branch since the fork:
+`lint` checks the routine files against the same rule `NewProvider` applies,
+without a database. In a merge request pipeline it also fails **a signature that
+disappeared** from a file the branch changed. A changed argument list or result
+type, or a removed overload, cannot be done in place, and the deploy would fail
+on it:
 
-- **The same routine changed on both sides.** With routines kept as files, git
-  does most of the work: if two branches change the same lines, the second one to
-  merge gets a conflict. If they change different lines, git merges both changes,
-  but the function that comes out of the merge was never reviewed or tested as a
-  whole. `lint` fails and asks for a rebase:
+```
+routines/billing/invoice_total.sql
+  invoice_total(invoice_id bigint) returns numeric is gone from the file: a new argument list or
+  result type is a new routine (copy the file to invoice_total_v2.sql and change the copy); removing
+  an overload needs a schema migration that drops it
+```
 
-  ```
-  $ funchose lint -base origin/main
-  funchose lint: 1 routine changed both in this branch and in origin/main
-
-    routines/billing/invoice_total.sql
-      changed in origin/main after this branch forked: 3f1c2ab Jane Doe: Count discounts in invoice totals
-
-  Rebase, then review and test the merged routines before merging:
-
-    git fetch origin main && git rebase origin/main
-  ```
-
-- **A signature that disappeared.** A changed argument list or result type, or a
-  removed overload, cannot be done in place. `lint` fails before the deploy would:
-
-  ```
-  routines/billing/invoice_total.sql
-    invoice_total(invoice_id bigint) returns numeric is gone from the file: a new argument list or
-    result type is a new routine (copy the file to invoice_total_v2.sql and change the copy); removing
-    an overload needs a schema migration that drops it
-  ```
-
-- **Removed files.** Listed for review, with the other routine files that still
-  mention the removed routine.
-
-`lint` compares the branch itself, not the merge commit CI may check out. In
-GitLab merged results pipelines it takes the branch from
+`lint` compares the branch itself with the commit it forked from, not the merge
+commit CI may check out. In GitLab merged results pipelines it takes the fork
+point from `CI_MERGE_REQUEST_DIFF_BASE_SHA` and the branch from
 `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` on its own; on GitHub check out the head of
-the pull request (see [CI](ci.md)); elsewhere pass `-head <commit>`. Problems are
-printed as `::error file=...` annotations on GitHub Actions.
+the pull request (see [CI](ci.md)); elsewhere pass `-since <commit>` and
+`-head <commit>`. Problems are printed as `::error file=...` annotations on GitHub
+Actions.
+
+Removed files are the deploy's business: it drops a routine only once nothing
+calls it ([Removing a routine](routine-files.md#removing-a-routine)).
+
+---
+
+[← Go library](go-library.md) · [Contents](../README.md#documentation) · [CI →](ci.md)
