@@ -92,32 +92,22 @@ func forkPoint(ctx context.Context, flagValue, base, head string) (string, error
 type branch struct {
 	fork, head string   // head "" is the working tree
 	changed    []string // files added or modified, relative to the working directory
-	removed    []string // files deleted
 }
 
-// readBranch lists the routine files the branch changed and removed since fork.
-// A moved file is a removed one plus a new one: that is what it means for the
-// routines.
+// readBranch lists the routine files the branch added or modified since fork. A
+// moved file is a new one: that is what it means for the routines.
 func readBranch(ctx context.Context, dir, fork, head string) (branch, error) {
-	diff := func(filter string) ([]string, error) {
-		args := []string{"diff", "--name-only", "--relative", "--no-renames", "--diff-filter=" + filter, fork}
-		if head != "" {
-			args = append(args, head)
-		}
-
-		return git(ctx, append(args, "--", dir)...)
+	args := []string{"diff", "--name-only", "--relative", "--no-renames", "--diff-filter=ACMR", fork}
+	if head != "" {
+		args = append(args, head)
 	}
 
 	changes := branch{fork: fork, head: head}
 
 	var err error
-	if changes.changed, err = diff("ACMR"); err != nil {
+	if changes.changed, err = git(ctx, append(args, "--", dir)...); err != nil {
 		return changes, fmt.Errorf("cannot diff against the fork point %s: %w (in CI: git fetch --depth=1 origin %s)",
 			fork, err, fork)
-	}
-
-	if changes.removed, err = diff("D"); err != nil {
-		return changes, err
 	}
 
 	if head == "" {
@@ -146,37 +136,4 @@ func (b branch) file(ctx context.Context, path string) (string, error) {
 	}
 
 	return gitOutput(ctx, "show", b.head+":./"+filepath.ToSlash(path))
-}
-
-// clash is a routine file changed both in the branch and in the target branch.
-type clash struct {
-	path   string
-	commit string // newest commit of the target branch that touched the file
-}
-
-// clashes returns the routine files the branch changed that the target branch
-// ref also changed since the fork.
-func (b branch) clashes(ctx context.Context, dir, ref string) ([]clash, error) {
-	theirs, err := git(ctx, "diff", "--name-only", "--relative", "--no-renames", b.fork, ref, "--", dir)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read %s: %w (in CI: git fetch origin %s)",
-			ref, err, strings.TrimPrefix(ref, "origin/"))
-	}
-
-	var out []clash
-
-	for _, path := range theirs {
-		if !slices.Contains(b.changed, path) && !slices.Contains(b.removed, path) || filepath.Ext(path) != ".sql" {
-			continue
-		}
-
-		log, err := git(ctx, "log", "-1", "--format=%h %an: %s", b.fork+".."+ref, "--", path)
-		if err != nil || len(log) == 0 {
-			log = []string{"see git log " + b.fork + ".." + ref + " -- " + path}
-		}
-
-		out = append(out, clash{path: path, commit: log[0]})
-	}
-
-	return out, nil
 }

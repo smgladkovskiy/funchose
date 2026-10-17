@@ -7,9 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/smgladkovskiy/funchose"
 )
@@ -19,23 +17,18 @@ type lintFlags struct {
 	dir, base, since, head string
 }
 
-// lint checks the routine files. When it knows the target branch, it also checks
-// what the branch did since it forked:
-//
-//   - a routine changed both in the branch and in the target branch fails: git
-//     merges such edits silently when they touch different lines, and nobody
-//     reviews or tests the routine that comes out of the merge;
-//   - a signature that disappeared from a changed file fails: CREATE OR REPLACE
-//     cannot change arguments or the result in place;
-//   - removed files are listed, with the other routine files that still mention
-//     the removed routine: a later deploy drops it.
+// lint checks the routine files. When it knows where the branch forked, it also
+// fails a signature that disappeared from a file the branch changed: CREATE OR
+// REPLACE cannot change arguments or the result in place, so the deploy would
+// fail on it. Everything else about a branch is the deploy's business: it drops
+// a removed routine only once nothing calls it.
 func lint(ctx context.Context, args []string, stdout, stderr io.Writer, colors palette) int {
 	opts, code := parseLint(args, stderr)
 	if opts == nil {
 		return code
 	}
 
-	routines, problems, err := funchose.Load(os.DirFS(opts.dir))
+	_, problems, err := funchose.Load(os.DirFS(opts.dir))
 	if err != nil {
 		fmt.Fprintln(stderr, "funchose lint:", err)
 
@@ -43,14 +36,9 @@ func lint(ctx context.Context, args []string, stdout, stderr io.Writer, colors p
 	}
 
 	ref := targetRef(opts.base)
-
-	var (
-		changes branch
-		clashes []clash
-	)
-
 	if ref != "" {
-		if changes, clashes, err = compare(ctx, opts, ref); err != nil {
+		changes, err := compare(ctx, opts, ref)
+		if err != nil {
 			fmt.Fprintln(stderr, "funchose lint:", err)
 
 			return ExitNoStart
@@ -61,17 +49,15 @@ func lint(ctx context.Context, args []string, stdout, stderr io.Writer, colors p
 
 	out := lintOutput{out: stdout, colors: colors, dir: opts.dir, annotate: os.Getenv("GITHUB_ACTIONS") == "true"}
 	out.problems(problems)
-	out.removed(changes.removed, routines)
-	out.clashes(clashes, ref)
 
 	switch {
-	case len(problems) > 0 || len(clashes) > 0:
+	case len(problems) > 0:
 		return ExitFailed
 	case ref == "":
-		fmt.Fprintf(stdout, "%s routine files are fine (no target branch, the branch was not compared)\n",
+		fmt.Fprintf(stdout, "%s routine files are fine (no target branch, signatures were not compared)\n",
 			colors.green("funchose lint: ok,"))
 	default:
-		fmt.Fprintf(stdout, "%s no routine this branch changes was changed in %s since the fork\n",
+		fmt.Fprintf(stdout, "%s routine files are fine, no signature is gone since the branch forked from %s\n",
 			colors.green("funchose lint: ok,"), ref)
 	}
 
@@ -105,21 +91,14 @@ func parseLint(args []string, stderr io.Writer) (*lintFlags, int) {
 	return &opts, ExitOK
 }
 
-// compare finds what the branch did since it forked from ref.
-func compare(ctx context.Context, opts *lintFlags, ref string) (branch, []clash, error) {
+// compare finds the routine files the branch changed since it forked from ref.
+func compare(ctx context.Context, opts *lintFlags, ref string) (branch, error) {
 	fork, err := forkPoint(ctx, opts.since, ref, opts.head)
 	if err != nil {
-		return branch{}, nil, err
+		return branch{}, err
 	}
 
-	changes, err := readBranch(ctx, opts.dir, fork, opts.head)
-	if err != nil {
-		return branch{}, nil, err
-	}
-
-	clashes, err := changes.clashes(ctx, opts.dir, ref)
-
-	return changes, clashes, err
+	return readBranch(ctx, opts.dir, fork, opts.head)
 }
 
 // lintOutput prints what lint found.
@@ -150,52 +129,6 @@ func (l lintOutput) problems(problems []funchose.Problem) {
 
 		fmt.Fprintf(l.out, "  %s\n    %s\n\n", l.colors.bold(loc), problem.Msg)
 	}
-}
-
-func (l lintOutput) removed(removed []string, routines []funchose.Routine) {
-	if len(removed) == 0 {
-		return
-	}
-
-	fmt.Fprintf(l.out, "%s\n", l.colors.yellow(fmt.Sprintf("funchose lint: this branch removes %s; "+
-		"the next deploy retires them, a later one drops them unless they are still called:",
-		plural(len(removed), "routine file"))))
-
-	for _, file := range removed {
-		fmt.Fprintf(l.out, "  %s\n", file)
-
-		for _, other := range mentions(l.dir, routines, file) {
-			if l.annotate {
-				fmt.Fprintf(l.out, "::warning file=%s::mentions %s, which this branch removes\n", other, routineName(file))
-			}
-
-			fmt.Fprintf(l.out, "    %s\n", l.colors.yellow("still mentioned in "+other))
-		}
-	}
-
-	fmt.Fprintln(l.out)
-}
-
-func (l lintOutput) clashes(clashes []clash, ref string) {
-	if len(clashes) == 0 {
-		return
-	}
-
-	fmt.Fprintf(l.out, "%s\n\n", l.colors.red(fmt.Sprintf("funchose lint: %s changed both in this branch and in %s",
-		plural(len(clashes), "routine"), ref)))
-
-	for _, found := range clashes {
-		if l.annotate {
-			fmt.Fprintf(l.out, "::error file=%s::changed in %s after this branch forked (%s); "+
-				"rebase and review the merged routine\n", found.path, ref, found.commit)
-		}
-
-		fmt.Fprintf(l.out, "  %s\n    changed in %s after this branch forked: %s\n\n",
-			l.colors.bold(found.path), ref, found.commit)
-	}
-
-	fmt.Fprintf(l.out, "%s\n\n  %s\n", l.colors.yellow("Rebase, then review and test the merged routines before merging:"),
-		l.colors.green(fmt.Sprintf("git fetch origin %s && git rebase %s", strings.TrimPrefix(ref, "origin/"), ref)))
 }
 
 // signatureProblems reports the files whose signatures at the fork point are
@@ -250,25 +183,4 @@ func versions(ctx context.Context, dir string, changes branch, path string) (fun
 	cur, curProblems := funchose.ParseRoutine(rel, []byte(after))
 
 	return old, cur, len(oldProblems) == 0 && len(curProblems) == 0
-}
-
-// mentions returns the routine files that mention the routine of a removed file
-// by name.
-func mentions(dir string, routines []funchose.Routine, removed string) []string {
-	name := routineName(removed)
-	word := regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_$])` + regexp.QuoteMeta(name) + `($|[^A-Za-z0-9_$])`)
-
-	var out []string
-
-	for _, routine := range routines {
-		if routine.Name != name && word.MatchString(routine.SQL) {
-			out = append(out, filepath.Join(dir, routine.Path))
-		}
-	}
-
-	return out
-}
-
-func routineName(path string) string {
-	return strings.TrimSuffix(filepath.Base(path), ".sql")
 }

@@ -16,7 +16,7 @@ Checks in merge requests and a deploy job:
 
 ```yaml
 variables:
-  FUNCHOSE_VERSION: v0.1.0
+  FUNCHOSE_VERSION: v0.2.0
 
 .funchose:
   image: golang:1.26
@@ -29,7 +29,7 @@ routines lint:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
-    - git fetch --depth=1 origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME $CI_MERGE_REQUEST_DIFF_BASE_SHA
+    - git fetch --depth=1 origin $CI_MERGE_REQUEST_DIFF_BASE_SHA
     - funchose lint
 
 routines:
@@ -63,12 +63,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
-      - run: go install github.com/smgladkovskiy/funchose/cmd/funchose@v0.1.0
+      - run: go install github.com/smgladkovskiy/funchose/cmd/funchose@v0.2.0
       - run: funchose lint -base origin/$GITHUB_BASE_REF
 ```
 
-`lint` compares the branch with the target, so it needs the branch itself, not
-the merge commit GitHub checks out for a pull request by default: hence `ref`.
+`lint` compares the branch with the commit it forked from, so it needs the
+branch itself, not the merge commit GitHub checks out for a pull request by
+default: hence `ref`.
 
 ## Rolling back from CI
 
@@ -78,3 +79,7 @@ the merge commit GitHub checks out for a pull request by default: hence `ref`.
 | go back with an older image                                                  | rerun the deploy job of the older pipeline with `FUNCHOSE_ALLOW_DOWNGRADE=true`       |
 | the older release did not have a routine a newer one created                 | add `FUNCHOSE_ALLOW_DROP=true`, once you know nothing calls it                        |
 | a newer pipeline is stale because a branch was deployed to the same database | run the newest pipeline again, or deploy it once with `FUNCHOSE_ALLOW_DOWNGRADE=true` |
+
+---
+
+[← Command line](cli.md) · [Contents](../README.md#documentation) · [Operations →](operations.md)

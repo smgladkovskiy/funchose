@@ -21,6 +21,8 @@ const (
 	gFile    = "s/g.sql"
 	fRoutine = "routines/s/f.sql"
 	fOfA     = "CREATE OR REPLACE FUNCTION f(a int) RETURNS int LANGUAGE sql AS 'SELECT a';\n"
+	fOfText  = "CREATE OR REPLACE FUNCTION f(a text) RETURNS int LANGUAGE sql AS 'SELECT 1';\n"
+	gone     = "is gone from the file"
 )
 
 const okRoutine = "CREATE OR REPLACE FUNCTION %s() RETURNS int LANGUAGE sql AS 'SELECT %d';\n"
@@ -31,15 +33,12 @@ type lintCase struct {
 	// main is committed on main, mine on the branch after it forked,
 	// theirs on main after the fork. Keys are paths under routines/.
 	main, mine, theirs map[string]string
-	remove             []string // paths under routines/ the branch deletes
-	rebase             bool
 	merged             bool // check out the merge of the branch into main, like a merged results pipeline
 	head               bool // pass the branch head with -head
 	gitlab             bool // set the variables of a GitLab merged results pipeline
 	target             bool // compare with origin/main
 	code               int
 	out                []string
-	notOut             []string
 }
 
 //nolint:paralleltest // lintRepo changes the working directory and the environment (t.Chdir, t.Setenv)
@@ -48,7 +47,7 @@ func TestLint(t *testing.T) {
 		{
 			name: "files only, outside a merge request",
 			main: map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1)},
-			code: 0, out: []string{"routine files are fine"},
+			code: 0, out: []string{"routine files are fine (no target branch"},
 		},
 		{
 			name: "a file that does not belong",
@@ -56,114 +55,59 @@ func TestLint(t *testing.T) {
 			code: 1, out: []string{"routines/s/f.sql:1", "DROP FUNCTION does not belong"},
 		},
 		{
-			name:   "the branch changes a routine the target changed after the fork",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1)},
-			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
-			theirs: map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 3)},
-			target: true,
-			code:   1, out: []string{"1 routine changed both in this branch and in origin/main", fRoutine, "theirs on f", "git rebase origin/main"},
-		},
-		{
-			name:   "the branch and the target change different routines",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1), gFile: fmt.Sprintf(okRoutine, "g", 1)},
-			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
-			theirs: map[string]string{gFile: fmt.Sprintf(okRoutine, "g", 2)},
-			target: true,
-			code:   0, out: []string{"no routine this branch changes was changed in origin/main"},
-		},
-		{
-			name:   "a GitLab merged results pipeline",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1), gFile: fmt.Sprintf(okRoutine, "g", 1)},
-			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
-			theirs: map[string]string{gFile: fmt.Sprintf(okRoutine, "g", 2)},
-			merged: true, gitlab: true,
-			code: 0,
-		},
-		{
-			name:   "a GitLab merged results pipeline, the same routine changed on both sides",
-			main:   map[string]string{fFile: "-- f\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end\n"},
-			mine:   map[string]string{fFile: "-- f\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end, changed in the branch\n"},
-			theirs: map[string]string{fFile: "-- f, changed in main\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end\n"},
-			merged: true, gitlab: true,
-			code: 1, out: []string{fRoutine},
-		},
-		{
-			name:   "a merge commit checkout with the branch head",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1), gFile: fmt.Sprintf(okRoutine, "g", 1)},
-			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
-			theirs: map[string]string{gFile: fmt.Sprintf(okRoutine, "g", 2)},
-			merged: true, head: true, target: true,
-			code: 0,
-		},
-		{
-			name:   "a merge commit checkout, the same routine changed on both sides",
-			main:   map[string]string{fFile: "-- f\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end\n"},
-			mine:   map[string]string{fFile: "-- f\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end, changed in the branch\n"},
-			theirs: map[string]string{fFile: "-- f, changed in main\n" + fmt.Sprintf(okRoutine, "f", 1) + "-- end\n"},
-			merged: true, head: true, target: true,
-			code: 1, out: []string{fRoutine},
-		},
-		{
-			name:   "removed routine files are listed for review",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1), gFile: fmt.Sprintf(okRoutine, "g", 1)},
-			remove: []string{gFile},
-			target: true,
-			code:   0, out: []string{"this branch removes 1 routine file", "routines/s/g.sql"}, notOut: []string{"still mentioned"},
-		},
-		{
-			name: "a removed routine that another file still calls",
-			main: map[string]string{
-				fFile:     fmt.Sprintf(okRoutine, "f", 1),
-				gFile:     "CREATE OR REPLACE FUNCTION g() RETURNS int LANGUAGE sql AS 'SELECT s.f() + 1';\n",
-				"s/h.sql": "CREATE OR REPLACE FUNCTION h() RETURNS int LANGUAGE sql AS 'SELECT ff()';\n",
-			},
-			remove: []string{fFile},
-			target: true,
-			code:   0, out: []string{fRoutine, "still mentioned in routines/s/g.sql"}, notOut: []string{"routines/s/h.sql"},
-		},
-		{
-			name:   "a file moved to another schema is a removal",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1)},
-			mine:   map[string]string{"t/f.sql": fmt.Sprintf(okRoutine, "f", 1)},
-			remove: []string{fFile},
-			target: true,
-			code:   0, out: []string{"this branch removes 1 routine file", fRoutine},
-		},
-		{
 			name:   "a changed argument list fails",
 			main:   map[string]string{fFile: fOfA},
 			mine:   map[string]string{fFile: "CREATE OR REPLACE FUNCTION f(a int, b int DEFAULT 0) RETURNS int LANGUAGE sql AS 'SELECT a + b';\n"},
 			target: true,
-			code:   1, out: []string{fRoutine, "f(a int) returns int is gone from the file", "f_v2.sql"},
+			code:   1, out: []string{fRoutine, "f(a int) returns int " + gone, "f_v2.sql"},
 		},
 		{
 			name:   "a changed result type fails",
 			main:   map[string]string{fFile: fOfA},
 			mine:   map[string]string{fFile: "CREATE OR REPLACE FUNCTION f(a int) RETURNS bigint LANGUAGE sql AS 'SELECT a';\n"},
 			target: true,
-			code:   1, out: []string{"is gone from the file"},
+			code:   1, out: []string{gone},
 		},
 		{
 			name:   "a reformatted header and a new body pass",
 			main:   map[string]string{fFile: fOfA},
 			mine:   map[string]string{fFile: "create or replace function s.f(\n    a INT\n)\n    returns INT\n    language sql\nas 'SELECT a + 1';\n"},
 			target: true,
+			code:   0, out: []string{"no signature is gone since the branch forked from origin/main"},
+		},
+		{
+			// git merges edits of different lines; the deploy runs what comes out.
+			name:   "the same routine changed in the branch and in the target passes",
+			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1)},
+			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
+			theirs: map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 3)},
+			target: true,
 			code:   0,
 		},
 		{
 			name:   "a changed signature in a merged results pipeline",
 			main:   map[string]string{fFile: fOfA},
-			mine:   map[string]string{fFile: "CREATE OR REPLACE FUNCTION f(a text) RETURNS int LANGUAGE sql AS 'SELECT 1';\n"},
+			mine:   map[string]string{fFile: fOfText},
 			merged: true, gitlab: true,
-			code: 1, out: []string{"is gone from the file"},
+			code: 1, out: []string{gone},
 		},
 		{
-			name:   "a rebased branch",
-			main:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 1)},
-			mine:   map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 2)},
-			theirs: map[string]string{fFile: fmt.Sprintf(okRoutine, "f", 3)},
-			rebase: true, target: true,
+			// The merge commit has the new signature from the target: lint
+			// compares the branch head, which does not.
+			name:   "a signature the target changed is not the branch's, merged results pipeline",
+			main:   map[string]string{fFile: fOfA, gFile: fmt.Sprintf(okRoutine, "g", 1)},
+			mine:   map[string]string{gFile: fmt.Sprintf(okRoutine, "g", 2)},
+			theirs: map[string]string{fFile: fOfText},
+			merged: true, gitlab: true,
 			code: 0,
+		},
+		{
+			name:   "a changed signature in a merge commit checkout with the branch head",
+			main:   map[string]string{fFile: fOfA, gFile: fmt.Sprintf(okRoutine, "g", 1)},
+			mine:   map[string]string{fFile: fOfText},
+			theirs: map[string]string{gFile: fmt.Sprintf(okRoutine, "g", 2)},
+			merged: true, head: true, target: true,
+			code: 1, out: []string{gone},
 		},
 	}
 	for _, tt := range tests {
@@ -177,10 +121,6 @@ func TestLint(t *testing.T) {
 
 			for _, want := range tt.out {
 				assert.Contains(t, buf.String(), want)
-			}
-
-			for _, unwanted := range tt.notOut {
-				assert.NotContains(t, buf.String(), unwanted)
 			}
 		})
 	}
@@ -209,14 +149,6 @@ func lintRepo(t *testing.T, tt lintCase) []string {
 	runGit(t, "checkout", "-q", "-b", "branch")
 	commit(t, tt.mine, "mine")
 
-	if len(tt.remove) > 0 {
-		for _, p := range tt.remove {
-			runGit(t, "rm", "-q", filepath.Join("routines", p))
-		}
-
-		runGit(t, "commit", "-q", "-m", "remove")
-	}
-
 	runGit(t, "checkout", "-q", "main")
 
 	for p := range tt.theirs {
@@ -225,10 +157,6 @@ func lintRepo(t *testing.T, tt lintCase) []string {
 
 	runGit(t, "update-ref", "refs/remotes/origin/main", "main")
 	runGit(t, "checkout", "-q", "branch")
-
-	if tt.rebase {
-		runGit(t, "rebase", "-q", "-X", "ours", "origin/main")
-	}
 
 	branchHead := strings.TrimSpace(gitOut(t, "rev-parse", "HEAD"))
 	if tt.merged {

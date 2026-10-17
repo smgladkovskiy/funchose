@@ -48,6 +48,14 @@ func (p *Provider) run(ctx context.Context, runMode mode) (Report, bool, error) 
 		return rep, false, err
 	}
 
+	// A read-only run applies nothing, so the bodies it reads now are the ones
+	// the drops would meet.
+	if runMode.readOnly() {
+		if err = rn.holdCalled(ctx, steps); err != nil {
+			return rep, false, err
+		}
+	}
+
 	work := slices.ContainsFunc(steps, step.writes)
 
 	if runMode.readOnly() {
@@ -265,7 +273,8 @@ func abbreviate(items []string, n int) string {
 }
 
 // execute does the work of every step: the files first, then the routines
-// without a file.
+// without a file, and the drops last, once the bodies that may still call the
+// dropped routines are final.
 func (rn *runner) execute(ctx context.Context, steps []step) error {
 	var files []*step
 
@@ -287,15 +296,25 @@ func (rn *runner) execute(ctx context.Context, steps []step) error {
 			err = rn.markRetired(ctx, stp)
 		case opForget:
 			err = rn.markGone(ctx, stp)
-		case opDrop:
-			err = rn.drop(ctx, stp)
 		case opRestore:
 			err = rn.restore(ctx, stp)
-		default: // opNone, or opApply, which is done above
+		default: // opNone, opApply done above, opDrop done below
 		}
 
 		if err != nil {
 			return err
+		}
+	}
+
+	if err := rn.holdCalled(ctx, steps); err != nil {
+		return err
+	}
+
+	for i := range steps {
+		if steps[i].op == opDrop {
+			if err := rn.drop(ctx, &steps[i]); err != nil {
+				return err
+			}
 		}
 	}
 
